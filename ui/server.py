@@ -170,8 +170,17 @@ class ViewerHandler(BaseHTTPRequestHandler):
             })
         elif request.path == "/api/frames":
             self._send_frames(parse_qs(request.query))
+        elif request.path == "/video":
+            self._send_video()
         elif request.path in STATIC_FILES:
             self._send_static(*STATIC_FILES[request.path])
+        else:
+            self.send_error(404, "Not found")
+
+    def do_HEAD(self):
+        if urlparse(self.path).path == "/video":
+            print("HEAD request received for /video")
+            self._send_video(head_only=True)
         else:
             self.send_error(404, "Not found")
 
@@ -194,6 +203,73 @@ class ViewerHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(content)))
         self.end_headers()
         self.wfile.write(content)
+
+    def _send_video(self, head_only=False):
+        try:
+            video_path = require(["video"])[0]
+            video = open(video_path, "rb")
+        except (KeyError, OSError) as error:
+            self.send_error(404, str(error))
+            return
+
+        with video:
+            size = os.fstat(video.fileno()).st_size
+            start, end = 0, size - 1
+            status = 200
+            range_header = self.headers.get("Range")
+
+            if range_header:
+                unit, separator, value = range_header.partition("=")
+                first, dash, last = value.partition("-")
+                if (unit != "bytes" or not separator or not dash or "," in value
+                        or (not first and not last)):
+                    self._send_range_not_satisfiable(size)
+                    return
+
+                try:
+                    if first:
+                        start = int(first)
+                        end = int(last) if last else size - 1
+                    else:
+                        suffix_length = int(last)
+                        if suffix_length < 1:
+                            raise ValueError("invalid suffix length")
+                        start = max(0, size - suffix_length)
+                        end = size - 1
+                except ValueError:
+                    self._send_range_not_satisfiable(size)
+                    return
+
+                if start >= size or start > end or size == 0:
+                    self._send_range_not_satisfiable(size)
+                    return
+                end = min(end, size - 1)
+                status = 206
+                video.seek(start)
+
+            length = end - start + 1
+            self.send_response(status)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(length))
+            if status == 206:
+                self.send_header("Content-Range", "bytes {}-{}/{}".format(start, end, size))
+            self.end_headers()
+
+            if not head_only:
+                remaining = length
+                while remaining:
+                    chunk = video.read(min(64 * 1024, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+
+    def _send_range_not_satisfiable(self, size):
+        self.send_response(416)
+        self.send_header("Content-Range", "bytes */{}".format(size))
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def _send_frames(self, query):
         try:

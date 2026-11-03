@@ -10,11 +10,15 @@ const elements = {
   stateDetail: document.getElementById("state-detail"),
   labelSource: document.getElementById("label-source"),
   sourceNote: document.getElementById("source-note"),
+  calculationLabel: document.getElementById("calculation-label"),
+  calculationDetail: document.getElementById("calculation-detail"),
   frameNumber: document.getElementById("frame-number"),
   timecode: document.getElementById("timecode"),
   trackedCount: document.getElementById("tracked-count"),
   homeName: document.getElementById("home-name"),
   awayName: document.getElementById("away-name"),
+  matchVideo: document.getElementById("match-video"),
+  videoStatus: document.getElementById("video-status"),
   timeline: document.getElementById("timeline"),
   timelineTime: document.getElementById("timeline-time"),
   duration: document.getElementById("duration"),
@@ -30,8 +34,6 @@ const state = {
   frames: new Map(),
   pending: new Map(),
   playing: false,
-  lastTick: 0,
-  fractionalFrames: 0,
 };
 
 function formatTime(frame) {
@@ -82,6 +84,11 @@ function currentFrameData() {
 
 function drawFrame(frame) {
   const dots = [];
+
+  possession = "D";
+
+  playersWithBall = null;
+
   frame.players.forEach((player) => {
     const circle = document.createElementNS(NS, "circle");
     circle.setAttribute("class", `player-dot ${player.team}`);
@@ -93,6 +100,13 @@ function drawFrame(frame) {
     title.textContent = `${player.team === "home" ? elements.homeName.textContent : elements.awayName.textContent} · track ${player.slot}`;
     circle.appendChild(title);
     dots.push(circle);
+    
+    if (frame.ball) {
+      const distance = Math.sqrt((player.x - frame.ball.x) ** 2 + (player.y - frame.ball.y) ** 2);
+      if (distance < 0.05) {
+        possession = player.team === "home" ? "H" : "A";
+      }
+    }
   });
 
   if (frame.ball) {
@@ -124,6 +138,8 @@ function drawFrame(frame) {
   elements.stateLabel.textContent = label.title;
   elements.stateIndicator.className = `state-indicator ${label.className}`;
   elements.stateDetail.textContent = label.detail;
+  elements.calculationLabel.textContent = possession;
+  elements.calculationDetail.textContent = "Calculating possession";
   elements.trackingStatus.textContent = frame.ball ? "BALL TRACKED" : "BALL NOT TRACKED";
   elements.trackingStatus.classList.toggle("missing", !frame.ball);
   elements.trackedCount.textContent = `${frame.players.length} players tracked`;
@@ -133,13 +149,16 @@ function drawFrame(frame) {
   elements.frameCaption.textContent = `FRAME ${frame.frame.toLocaleString()} / ${(state.frameCount - 1).toLocaleString()}`;
 }
 
-function setFrame(frame) {
+function setFrame(frame, syncVideo = true) {
   state.frame = Math.max(0, Math.min(Math.round(frame), state.frameCount - 1));
   elements.timeline.value = String(state.frame);
   elements.timeline.style.setProperty(
     "--progress",
     `${state.frame / Math.max(1, state.frameCount - 1) * 100}%`,
   );
+  if (syncVideo && elements.matchVideo.readyState >= HTMLMediaElement.HAVE_METADATA) {
+    elements.matchVideo.currentTime = state.frame / state.fps;
+  }
   const data = currentFrameData();
   if (data) {
     drawFrame(data);
@@ -156,34 +175,30 @@ function setFrame(frame) {
 }
 
 function setPlaying(playing) {
-  state.playing = playing;
-  state.lastTick = 0;
-  elements.playButton.classList.toggle("is-playing", playing);
-  elements.playButton.setAttribute("aria-label", playing ? "Pause" : "Play");
-  if (playing) requestAnimationFrame(tick);
+  if (playing) {
+    elements.matchVideo.play().catch((error) => {
+      showError(`Could not play the match video: ${error.message}`);
+    });
+  } else {
+    elements.matchVideo.pause();
+  }
 }
 
-function tick(timestamp) {
-  if (!state.playing) return;
-  if (!state.lastTick) state.lastTick = timestamp;
-  state.fractionalFrames += (timestamp - state.lastTick) * state.fps / 1000;
-  state.lastTick = timestamp;
+function updateFrameFromVideo(time) {
+  if (!state.frameCount) return;
+  const frame = Math.min(Math.floor(time * state.fps), state.frameCount - 1);
+  if (frame !== state.frame) setFrame(frame, false);
+}
 
-  const advance = Math.floor(state.fractionalFrames);
-  if (advance > 0) {
-    const target = Math.min(state.frame + advance, state.frameCount - 1);
-    state.fractionalFrames -= advance;
-    const cached = state.frames.get(`${elements.labelSource.value}:${target}`);
-    if (cached) {
-      state.frame = target;
-      elements.timeline.value = String(target);
-      drawFrame(cached);
-    } else {
-      fetchFrames(target, BATCH_SIZE).catch(() => {});
-    }
-    if (target >= state.frameCount - 1) setPlaying(false);
-  }
-  requestAnimationFrame(tick);
+function trackVideoFrames(_now, metadata) {
+  updateFrameFromVideo(metadata.mediaTime);
+  elements.matchVideo.requestVideoFrameCallback(trackVideoFrames);
+}
+
+function updatePlaybackState(playing) {
+  state.playing = playing;
+  elements.playButton.classList.toggle("is-playing", playing);
+  elements.playButton.setAttribute("aria-label", playing ? "Pause" : "Play");
 }
 
 function onLabelSourceChange() {
@@ -219,6 +234,7 @@ async function initialize() {
     elements.timeline.value = String(state.frame);
     await fetchFrames(state.frame, BATCH_SIZE);
     setFrame(state.frame);
+
     elements.labelSource.addEventListener("change", () => {
       elements.sourceNote.textContent = elements.labelSource.selectedOptions[0]?.dataset.description || "";
       onLabelSourceChange();
@@ -228,6 +244,29 @@ async function initialize() {
   }
 }
 
+elements.matchVideo.addEventListener("loadedmetadata", () => {
+  elements.videoStatus.textContent = "VIDEO READY";
+  if (state.frameCount) setFrame(state.frame);
+  if (elements.matchVideo.requestVideoFrameCallback) {
+    elements.matchVideo.requestVideoFrameCallback(trackVideoFrames);
+  }
+});
+elements.matchVideo.addEventListener("timeupdate", () => {
+  updateFrameFromVideo(elements.matchVideo.currentTime);
+});
+elements.matchVideo.addEventListener("seeked", () => {
+  updateFrameFromVideo(elements.matchVideo.currentTime);
+});
+elements.matchVideo.addEventListener("play", () => updatePlaybackState(true));
+elements.matchVideo.addEventListener("pause", () => updatePlaybackState(false));
+elements.matchVideo.addEventListener("ended", () => {
+  updatePlaybackState(false);
+  setFrame(state.frameCount - 1, false);
+});
+elements.matchVideo.addEventListener("error", () => {
+  elements.videoStatus.textContent = "VIDEO UNAVAILABLE";
+  showError("Could not load the match video. Confirm the tactical MP4 is present in the data folder.");
+});
 elements.playButton.addEventListener("click", () => setPlaying(!state.playing));
 document.getElementById("back-button").addEventListener("click", () => setFrame(state.frame - SKIP_FRAMES));
 document.getElementById("forward-button").addEventListener("click", () => setFrame(state.frame + SKIP_FRAMES));

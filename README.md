@@ -92,6 +92,20 @@ python evaluation/validate_submission.py <your>.csv     # before every submissio
 official scorer runs, and a file that fails them is dropped from the board with a one-line reason.
 It takes two seconds and it is the single most common way a good entry scores nothing.
 
+## Tracking frame viewer
+
+With the match bundle unpacked into `data/`, start the local frame-by-frame pitch viewer:
+
+```bash
+python ui/server.py
+```
+
+Open **http://127.0.0.1:8765** in your browser. The viewer shows tracked player and ball dots,
+supports play/pause, frame stepping, timeline seeking, and five-second rewind/advance. Its ball
+state can use any provided baseline or the released public ground truth; baseline states are
+estimates, and the public labels are available only in the labeled window. The viewer indexes the
+tracking file once at startup and reads frames on demand.
+
 ---
 
 ## Getting the data

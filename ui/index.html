@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#101815">
+    <title>Match Frame Viewer</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Match Frame Viewer home">
+          <span class="brand-mark" aria-hidden="true">M</span>
+          <span>TACTICAL <strong>REPLAY</strong></span>
+        </a>
+        <div class="match-meta">
+          <span class="live-dot"></span>
+          <span>BARCELONA <span class="meta-divider">vs</span> ATHLETIC CLUB</span>
+          <span class="meta-tag">TRACKING VIEW</span>
+        </div>
+        <div class="frame-rate"><span class="rate-dot"></span>25 FPS</div>
+      </header>
+
+      <section class="workspace">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">MATCH ANALYSIS <span>/</span> FRAME PLAYBACK</p>
+            <h1>See every movement.</h1>
+          </div>
+          <div class="keyboard-hint"><kbd>SPACE</kbd> play / pause <span>·</span> <kbd>←</kbd><kbd>→</kbd> seek</div>
+        </div>
+
+        <div class="viewer-grid">
+          <section class="pitch-panel" aria-label="Player and ball positions on the pitch">
+            <div class="panel-topline">
+              <span class="panel-label"><span class="panel-live"></span> TACTICAL PITCH</span>
+              <span id="tracking-status" class="tracking-status">Loading tracking…</span>
+            </div>
+            <div class="pitch-wrap">
+              <svg id="pitch" viewBox="0 0 1050 680" role="img" aria-label="Top-down pitch with tracked player and ball positions">
+                <defs>
+                  <pattern id="grass" width="210" height="680" patternUnits="userSpaceOnUse">
+                    <rect width="105" height="680" fill="#245637"></rect>
+                    <rect x="105" width="105" height="680" fill="#285d3c"></rect>
+                  </pattern>
+                  <filter id="dot-shadow" x="-80%" y="-80%" width="260%" height="260%">
+                    <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#07110a" flood-opacity=".5"></feDropShadow>
+                  </filter>
+                </defs>
+                <rect width="1050" height="680" fill="url(#grass)"></rect>
+                <g class="pitch-lines">
+                  <rect x="16" y="16" width="1018" height="648" rx="2"></rect>
+                  <line x1="525" y1="16" x2="525" y2="664"></line>
+                  <circle cx="525" cy="340" r="91.5"></circle>
+                  <circle class="center-spot" cx="525" cy="340" r="4"></circle>
+                  <rect x="16" y="169" width="165" height="342"></rect>
+                  <rect x="16" y="249" width="55" height="182"></rect>
+                  <rect x="869" y="169" width="165" height="342"></rect>
+                  <rect x="979" y="249" width="55" height="182"></rect>
+                  <path d="M181 271 A91 91 0 0 1 181 409"></path>
+                  <path d="M869 271 A91 91 0 0 0 869 409"></path>
+                  <circle class="center-spot" cx="126" cy="340" r="4"></circle>
+                  <circle class="center-spot" cx="924" cy="340" r="4"></circle>
+                  <path d="M16 16 h-10 v104 h10 M1034 16 h10 v104 h-10 M16 664 h-10 v-104 h10 M1034 664 h10 v-104 h-10"></path>
+                </g>
+                <g id="markers" filter="url(#dot-shadow)"></g>
+              </svg>
+            </div>
+            <div class="pitch-legend">
+              <span><i class="legend-dot home"></i><b id="home-name">Home</b></span>
+              <span><i class="legend-dot away"></i><b id="away-name">Away</b></span>
+              <span><i class="legend-dot ball"></i>Ball</span>
+              <span class="legend-note">Dots show tracked positions · hover a player for its track slot</span>
+            </div>
+          </section>
+
+          <aside class="info-panel">
+            <div class="state-card">
+              <div class="card-label">BALL STATE <span class="state-source">DATA LABEL</span></div>
+              <div class="state-main">
+                <span id="state-indicator" class="state-indicator unknown"></span>
+                <div>
+                  <div id="state-label" class="state-label">Loading…</div>
+                  <div id="state-detail" class="state-detail">Reading frame labels</div>
+                </div>
+              </div>
+              <div class="source-row">
+                <label for="label-source">Label source</label>
+                <select id="label-source" aria-label="Possession label source"></select>
+              </div>
+              <p id="source-note" class="source-note">Model labels are estimates, not ground truth.</p>
+            </div>
+
+            <div class="frame-card">
+              <div class="card-label">CURRENT FRAME</div>
+              <div class="frame-number" id="frame-number">—</div>
+              <div class="frame-time-row">
+                <span id="timecode">00:00.00</span>
+                <span class="time-divider"></span>
+                <span id="tracked-count">— players tracked</span>
+              </div>
+            </div>
+
+            <div class="key-card">
+              <div class="card-label">QUICK CONTROLS</div>
+              <div class="shortcut-row"><span>Play / pause</span><kbd>SPACE</kbd></div>
+              <div class="shortcut-row"><span>Step one frame</span><span><kbd>←</kbd> <kbd>→</kbd></span></div>
+              <div class="shortcut-row"><span>Jump 5 seconds</span><span><kbd>SHIFT</kbd> <kbd>←</kbd><kbd>→</kbd></span></div>
+            </div>
+          </aside>
+        </div>
+
+        <section class="transport" aria-label="Playback controls">
+          <div class="transport-buttons">
+            <button id="start-button" class="icon-button endpoint" type="button" title="Go to start of match" aria-label="Go to start of match">|◀</button>
+            <button id="back-button" class="icon-button skip" type="button" title="Rewind 5 seconds" aria-label="Rewind 5 seconds"><span>−5</span><small>SEC</small></button>
+            <button id="play-button" class="play-button" type="button" aria-label="Play">
+              <svg class="play-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"></path></svg>
+              <svg class="pause-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM14 5h4v14h-4z"></path></svg>
+            </button>
+            <button id="forward-button" class="icon-button skip" type="button" title="Advance 5 seconds" aria-label="Advance 5 seconds"><span>+5</span><small>SEC</small></button>
+            <button id="end-button" class="icon-button endpoint" type="button" title="Go to end of match" aria-label="Go to end of match">▶|</button>
+          </div>
+          <div class="timeline-wrap">
+            <div class="timeline-labels"><span>00:00</span><span id="timeline-time">00:00.00</span><span id="duration">—</span></div>
+            <input id="timeline" class="timeline" type="range" min="0" max="199318" value="11185" step="1" aria-label="Seek to frame">
+            <div class="timeline-caption"><span>FRAME-BY-FRAME TIMELINE</span><span id="frame-caption">FRAME — / —</span></div>
+          </div>
+        </section>
+        <div id="error-message" class="error-message" role="alert" hidden></div>
+      </section>
+      <footer><span>Tracking data visualization</span><span>BAR–ATH <i>·</i> TACTICAL CAMERA</span></footer>
+    </main>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

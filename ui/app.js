@@ -82,6 +82,14 @@ function currentFrameData() {
   return state.frames.get(`${elements.labelSource.value}:${state.frame}`);
 }
 
+function futureFrameData(targetFrame) {
+  return state.frames.get(`${elements.labelSource.value}:${state.frame + targetFrame}`);
+}
+
+function currentPossession(frame) {
+  // Implementation for determining current possession based on frame data
+}
+
 function drawFrame(frame) {
   const dots = [];
 
@@ -100,13 +108,21 @@ function drawFrame(frame) {
     title.textContent = `${player.team === "home" ? elements.homeName.textContent : elements.awayName.textContent} · track ${player.slot}`;
     circle.appendChild(title);
     dots.push(circle);
+
+    console.log("Frame data: ", frame);
     
     if (frame.ball) {
-      const distance = Math.sqrt((player.x - frame.ball.x) ** 2 + (player.y - frame.ball.y) ** 2);
-      if (distance < 0.05) {
+      const distance = Math.hypot(player.x - frame.ball.x, player.y - frame.ball.y);
+      
+      if (distance < 0.05 && (playersWithBall === null)) {
+        playersWithBall = distance;
+        possession = player.team === "home" ? "H" : "A";
+      } else if (distance < 0.05 && (playersWithBall !== null && distance < playersWithBall)) {
+        playersWithBall = distance;
         possession = player.team === "home" ? "H" : "A";
       }
     }
+
   });
 
   if (frame.ball) {
@@ -121,6 +137,24 @@ function drawFrame(frame) {
     dots.push(ball);
   }
   elements.markers.replaceChildren(...dots);
+
+  i = 50;
+  playerStillWithBall = false;
+  while (playersWithBall === null && frame.ball && playerStillWithBall === false && i < 150) {
+    futureFrame = futureFrameData(i);
+    futureFrame?.players.forEach((player) => {
+      const distance = Math.hypot(player.x - frame.ball.x, player.y - frame.ball.y);
+
+      if (distance < 0.05 && (playersWithBall === null)) {
+        playersWithBall = distance;
+        possession = player.team === "home" ? "H" : "A";
+      } else if (distance < 0.05 && (playersWithBall !== null && distance < playersWithBall)) {
+        playersWithBall = distance;
+        possession = player.team === "home" ? "H" : "A";
+      }
+    });
+    i += 50;
+  }
 
   const labels = {
     H: { title: "Home possession", className: "home", detail: `${elements.homeName.textContent} in possession` },

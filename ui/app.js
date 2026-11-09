@@ -34,7 +34,9 @@ const state = {
   frames: new Map(),
   pending: new Map(),
   playing: false,
+  possession: "D",
 };
+
 
 function formatTime(frame) {
   const totalSeconds = Math.floor(frame / state.fps);
@@ -86,16 +88,96 @@ function futureFrameData(targetFrame) {
   return state.frames.get(`${elements.labelSource.value}:${state.frame + targetFrame}`);
 }
 
-function currentPossession(frame) {
-  // Implementation for determining current possession based on frame data
+function closestPlayerWithBall(frame) {
+  if (!frame.ball) return null;
+
+  let closestPlayer = null;
+  let closestDistance = 0.05;
+
+  for (const player of frame.players) {
+    const distance = Math.hypot(
+      player.x - frame.ball.x,
+      player.y - frame.ball.y,
+    );
+
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestPlayer = player;
+    }
+  }
+
+  return closestPlayer;
+}
+
+function currentPossessionFifa(frame) {
+  const candidate = closestPlayerWithBall(frame);
+  if (!candidate) return state.possession;
+
+  const source = elements.labelSource.value;
+
+  for (let offset = 1; offset <= 6; offset++) {
+    const nextFrame = state.frames.get(`${source}:${frame.frame + offset}`);
+
+    // Future data may not have loaded yet; don't treat that as lost possession.
+    if (!nextFrame) return state.possession;
+
+    const nextPlayer = closestPlayerWithBall(nextFrame);
+    if (
+      !nextPlayer ||
+      nextPlayer.slot !== candidate.slot ||
+      nextPlayer.team !== candidate.team
+    ) {
+      return state.possession = "D"; // Dead ball, lost possession
+    }
+  }
+
+  if (candidate.team === "home") {
+    return state.possession = "H";
+  } else {
+    return state.possession = "A";
+  }
+
+}
+
+function currentPossessionTactical(frame) {
+  const candidate = closestPlayerWithBall(frame);
+  if (!candidate) return state.possession;
+
+  state.possession = candidate.team === "home" ? "H" : "A";
+
+  const source = elements.labelSource.value;
+
+  let opponentPossession = 1;
+
+  for (let offset = 1; offset <= 50; offset++) {
+    const nextFrame = state.frames.get(`${source}:${frame.frame + offset}`);
+
+    // Future data may not have loaded yet; don't treat that as lost possession.
+    if (!nextFrame) return state.possession;
+
+    const nextPlayer = closestPlayerWithBall(nextFrame);
+
+    if (!nextPlayer) {
+      state.possession = "D"; // Dead ball, lost possession
+    } else if (nextPlayer.team !== candidate.team) {
+      opponentPossession += 1;
+    } else {
+      opponentPossession = 1;
+    }
+
+    if (opponentPossession >= 13) {
+      state.possession = nextPlayer.team === "home" ? "H" : "A"; // Opponent has had possession for 13 frames, switch possession
+    }
+  }
+
+  return state.possession;
+
 }
 
 function drawFrame(frame) {
   const dots = [];
 
-  possession = "D";
-
-  playersWithBall = null;
+  const possession = currentPossessionTactical(frame);
 
   frame.players.forEach((player) => {
     const circle = document.createElementNS(NS, "circle");
@@ -108,20 +190,6 @@ function drawFrame(frame) {
     title.textContent = `${player.team === "home" ? elements.homeName.textContent : elements.awayName.textContent} · track ${player.slot}`;
     circle.appendChild(title);
     dots.push(circle);
-
-    console.log("Frame data: ", frame);
-    
-    if (frame.ball) {
-      const distance = Math.hypot(player.x - frame.ball.x, player.y - frame.ball.y);
-      
-      if (distance < 0.05 && (playersWithBall === null)) {
-        playersWithBall = distance;
-        possession = player.team === "home" ? "H" : "A";
-      } else if (distance < 0.05 && (playersWithBall !== null && distance < playersWithBall)) {
-        playersWithBall = distance;
-        possession = player.team === "home" ? "H" : "A";
-      }
-    }
 
   });
 
@@ -137,24 +205,6 @@ function drawFrame(frame) {
     dots.push(ball);
   }
   elements.markers.replaceChildren(...dots);
-
-  i = 50;
-  playerStillWithBall = false;
-  while (playersWithBall === null && frame.ball && playerStillWithBall === false && i < 150) {
-    futureFrame = futureFrameData(i);
-    futureFrame?.players.forEach((player) => {
-      const distance = Math.hypot(player.x - frame.ball.x, player.y - frame.ball.y);
-
-      if (distance < 0.05 && (playersWithBall === null)) {
-        playersWithBall = distance;
-        possession = player.team === "home" ? "H" : "A";
-      } else if (distance < 0.05 && (playersWithBall !== null && distance < playersWithBall)) {
-        playersWithBall = distance;
-        possession = player.team === "home" ? "H" : "A";
-      }
-    });
-    i += 50;
-  }
 
   const labels = {
     H: { title: "Home possession", className: "home", detail: `${elements.homeName.textContent} in possession` },
